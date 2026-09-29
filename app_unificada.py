@@ -16,8 +16,8 @@ no puede renderizar WebGL dentro de una ventana. La pestaña de voz lo
 lanza igual que antes, mediante el servidor HTTP/WebSocket.
 
 Uso:
-    python app_unificada.py             # ambas pestañas, con robot
-    python app_unificada.py --sin-robot # sin conectar el G1
+    python app_unificada.py             # ambas pestañas (sin robot en esta versión)
+    python app_unificada.py --robot     # habilita el Unitree G1 (usar_robot)
     python app_unificada.py --v2        # reconocedor v2 (recomendado)
     python app_unificada.py --comparar  # selector RF / MLP / MobileNetV2 + informes
 """
@@ -43,7 +43,7 @@ log = logging.getLogger("lsc_udi.app")
 class AppUnificada:
     """Contenedor único: una ventana raíz, un Notebook, dos sistemas."""
 
-    TITULO = "LSC UDI — Lengua de Señas Colombiana | Unitree G1"
+    TITULO = "LSC UDI — Lengua de Señas Colombiana"
     ANCHO_MIN = 1100
     ALTO_MIN = 700
 
@@ -113,8 +113,10 @@ class AppUnificada:
 
 def parsear_args():
     p = argparse.ArgumentParser(description="LSC UDI — aplicación unificada")
+    p.add_argument("--robot", action="store_true",
+                   help="Habilitar el robot Unitree G1 (botón, estado y envío de señas)")
     p.add_argument("--sin-robot", action="store_true",
-                   help="Ejecutar sin conectar al robot G1")
+                   help="Forzar ejecución sin robot (por defecto en esta versión)")
     p.add_argument("--v2", action="store_true",
                    help="Usar reconocedor v2 (secuencial mano+cara, recomendado)")
     p.add_argument("--comparar", action="store_true",
@@ -135,7 +137,8 @@ def main():
 
     config = Configuracion(args.config)
     config.camara_idx = args.camara
-    config.robot_activo = not args.sin_robot
+    config.usar_robot = (args.robot or config.usar_robot) and not args.sin_robot
+    config.robot_activo = config.usar_robot
     config.usar_v2 = args.v2 or config.usar_v2
     config.usar_comparativo = args.comparar or config.usar_comparativo
 

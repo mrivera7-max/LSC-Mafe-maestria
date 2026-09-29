@@ -44,13 +44,14 @@ class DialogoConfig(tk.Toplevel):
         self._campo(tab_mod, "Número máximo de manos:", "num_manos", 1)
         self._campo(tab_mod, "Ruta al modelo (.pkl):", "modelo_pesos", 2)
 
-        # Pestaña: Robot G1
-        tab_rob = tk.Frame(notebook, bg=self._panel, padx=16, pady=16)
-        notebook.add(tab_rob, text="  Robot G1  ")
-        self._campo(tab_rob, "IP del robot:", "robot_ip", 0)
-        self._campo(tab_rob, "Puerto SDK:", "robot_puerto", 1)
-        self._campo(tab_rob, "Timeout (seg):", "robot_timeout", 2)
-        self._campo(tab_rob, "Velocidad máx. (0-1):", "robot_velocidad_max", 3)
+        # Pestaña: Robot G1 (solo si el robot está habilitado)
+        if getattr(self.config, "usar_robot", False):
+            tab_rob = tk.Frame(notebook, bg=self._panel, padx=16, pady=16)
+            notebook.add(tab_rob, text="  Robot G1  ")
+            self._campo(tab_rob, "IP del robot:", "robot_ip", 0)
+            self._campo(tab_rob, "Puerto SDK:", "robot_puerto", 1)
+            self._campo(tab_rob, "Timeout (seg):", "robot_timeout", 2)
+            self._campo(tab_rob, "Velocidad máx. (0-1):", "robot_velocidad_max", 3)
 
         # Botones
         frame_btn = tk.Frame(self, bg=self._bg)

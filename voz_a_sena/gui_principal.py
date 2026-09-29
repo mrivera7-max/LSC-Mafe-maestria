@@ -23,7 +23,7 @@ log = logging.getLogger("voz_a_sena.gui")
 
 
 class VentanaVozASena:
-    TITULO = "LSC UDI — Voz/Texto a Sena | Robot G1"
+    TITULO = "LSC UDI — Voz/Texto a Seña"
 
     def __init__(self):
         self.servidor = ServidorVozASena()
@@ -99,7 +99,7 @@ class VentanaVozASena:
         encabezado.pack(fill="x")
         tk.Label(encabezado, text="◈ LSC UDI", bg=c_acento, fg="white",
                  font=("Segoe UI", 16, "bold")).pack(side="left", padx=16, pady=14)
-        tk.Label(encabezado, text="Voz / Texto  →  Sena  →  Robot G1", bg=c_acento,
+        tk.Label(encabezado, text="Voz / Texto  →  Seña", bg=c_acento,
                  fg="#bfdbfe", font=("Segoe UI", 10)).pack(side="left", pady=14)
 
         boton_visor = tk.Button(

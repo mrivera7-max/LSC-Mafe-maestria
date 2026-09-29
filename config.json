@@ -24,7 +24,8 @@
     "Silencio",
     "Si"
   ],
-  "robot_activo": true,
+  "usar_robot": false,
+  "robot_activo": false,
   "robot_ip": "127.0.0.1",
   "robot_puerto": 8080,
   "robot_modo": "espejo",

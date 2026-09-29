@@ -40,6 +40,7 @@ class Configuracion:
         ]
 
         # Robot Unitree G1
+        self.usar_robot = False   # False = versión sin robot (oculta botón, estado y telemetría)
         self.robot_activo = True
         self.robot_ip = "192.168.123.161"
         self.robot_puerto = 8080

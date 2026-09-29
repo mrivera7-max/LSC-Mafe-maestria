@@ -8,11 +8,12 @@ Layout:
   │  Feed de cámara + LM     │  Panel de información    │
   │  (OpenCV → PIL → Tk)     │  • Seña / Confianza      │
   │                          │  • Traducción             │
-  │                          │  • Estado robot           │
+  │                          │  • Rendimiento / Robot*   │
   │                          │  • Historial              │
   ├──────────────────────────┴──────────────────────────┤
-  │  Barra de estado (FPS · Señas detectadas · Robot)   │
+  │  Barra de estado (FPS · Señas detectadas · Robot*)  │
   └─────────────────────────────────────────────────────┘
+  * Los elementos del robot solo aparecen con config.usar_robot = true.
 """
 
 import logging
@@ -30,7 +31,7 @@ log = logging.getLogger("lsc_bridge.gui")
 class VentanaPrincipal:
     """Ventana principal de la aplicación LSC Bridge."""
 
-    TITULO = "LSC UDI — Lengua de Señas Colombiana | Unitree G1"
+    TITULO = "LSC UDI — Lengua de Señas Colombiana"
     ANCHO_MIN = 1100
     ALTO_MIN  = 680
 
@@ -43,6 +44,8 @@ class VentanaPrincipal:
         self._total_señas = 0
         self._ultima_seña = None
 
+        # Robot Unitree G1: desactivado en esta versión (config.usar_robot)
+        self._usar_robot = bool(getattr(config, "usar_robot", False))
         # Modo comparación de modelos (config.usar_comparativo)
         self._comparativo = bool(getattr(config, "usar_comparativo", False))
 
@@ -206,7 +209,8 @@ class VentanaPrincipal:
         tk.Label(self._barra, text="◈  LSC UDI",
                  bg=c["acento"], fg=c["texto"],
                  font=("Segoe UI", 13, "bold")).pack(side="left", padx=16)
-        tk.Label(self._barra, text="Lengua de Señas Colombiana → Unitree G1",
+        tk.Label(self._barra, text="Lengua de Señas Colombiana → Unitree G1" if self._usar_robot
+                 else "Reconocimiento de Lengua de Señas Colombiana",
                  bg=c["acento"], fg=c["texto_sec"],
                  font=("Segoe UI", 9)).pack(side="left", padx=4)
 
@@ -222,13 +226,14 @@ class VentanaPrincipal:
         )
         self._btn_camara.pack(side="left", padx=4, pady=8)
 
-        self._btn_robot = tk.Button(
-            frame_btns, text="⚡  Conectar G1",
-            bg=c["verde"], fg="#052e16", relief="flat",
-            font=("Segoe UI", 9, "bold"), padx=12, pady=6,
-            cursor="hand2", command=self._toggle_robot,
-        )
-        self._btn_robot.pack(side="left", padx=4, pady=8)
+        if self._usar_robot:
+            self._btn_robot = tk.Button(
+                frame_btns, text="⚡  Conectar G1",
+                bg=c["verde"], fg="#052e16", relief="flat",
+                font=("Segoe UI", 9, "bold"), padx=12, pady=6,
+                cursor="hand2", command=self._toggle_robot,
+            )
+            self._btn_robot.pack(side="left", padx=4, pady=8)
 
         tk.Button(
             frame_btns, text="⚙",
@@ -288,9 +293,20 @@ class VentanaPrincipal:
 
         self._separador(self._frame_info)
 
-        # ── Estado del robot ──────────────────────────────────────
+        # ── Rendimiento (y estado del robot, si está habilitado) ──
         sec3 = tk.Frame(self._frame_info, bg=c["panel"])
         sec3.pack(fill="x", **pad)
+
+        if not self._usar_robot:
+            tk.Label(sec3, text="RENDIMIENTO", bg=c["panel"], fg=c["texto_sec"],
+                     font=("Segoe UI", 9, "bold")).pack(anchor="w")
+            grid_tel = tk.Frame(sec3, bg=c["panel"])
+            grid_tel.pack(fill="x", pady=(4, 0))
+            self._lbl_fps = self._stat_card(grid_tel, "FPS inferencia", "—", 0, 0)
+            self._lbl_total = self._stat_card(grid_tel, "Señas detectadas", "0", 0, 1)
+            self._separador(self._frame_info)
+            self._construir_historial(pad)
+            return
 
         tk.Label(sec3, text="ROBOT UNITREE G1", bg=c["panel"], fg=c["texto_sec"],
                  font=("Segoe UI", 9, "bold")).pack(anchor="w")
@@ -316,7 +332,10 @@ class VentanaPrincipal:
         self._lbl_total = self._stat_card(grid_tel, "Señas hoy", "0", 1, 1)
 
         self._separador(self._frame_info)
+        self._construir_historial(pad)
 
+    def _construir_historial(self, pad):
+        c = self._colores
         # ── Historial ─────────────────────────────────────────────
         sec4 = tk.Frame(self._frame_info, bg=c["panel"])
         sec4.pack(fill="both", expand=True, **pad)
@@ -467,12 +486,12 @@ class VentanaPrincipal:
 
         tk.Label(self._barra_estado, text="|", bg=c["acento"], fg=c["texto_sec"]).pack(side="left")
 
-        self._lbl_status_robot = tk.Label(self._barra_estado, text="● Robot: desconectado",
-                                           bg=c["acento"], fg=c["rojo"],
-                                           font=("Segoe UI", 8))
-        self._lbl_status_robot.pack(side="left", padx=12)
-
-        tk.Label(self._barra_estado, text="|", bg=c["acento"], fg=c["texto_sec"]).pack(side="left")
+        if self._usar_robot:
+            self._lbl_status_robot = tk.Label(self._barra_estado, text="● Robot: desconectado",
+                                               bg=c["acento"], fg=c["rojo"],
+                                               font=("Segoe UI", 8))
+            self._lbl_status_robot.pack(side="left", padx=12)
+            tk.Label(self._barra_estado, text="|", bg=c["acento"], fg=c["texto_sec"]).pack(side="left")
 
         self._lbl_status_fps = tk.Label(self._barra_estado, text="FPS: —",
                                          bg=c["acento"], fg=c["texto_sec"],
@@ -490,8 +509,7 @@ class VentanaPrincipal:
     # ── Sistemas ──────────────────────────────────────────────────
 
     def _iniciar_sistemas(self):
-        """Inicializa el reconocedor y el conector al robot."""
-        from robot.conector_g1 import ConectorG1
+        """Inicializa el reconocedor y, si está habilitado, el conector al robot."""
 
         if self._comparativo:
             from models.reconocedor_comparativo import ReconocedorComparativo
@@ -507,6 +525,11 @@ class VentanaPrincipal:
             self._reconocedor = ReconocedorLSC(self.config)
             log.info("Usando ReconocedorLSC (estatico)")
 
+        if not self._usar_robot:
+            self._robot = None
+            return
+
+        from robot.conector_g1 import ConectorG1
         self._robot = ConectorG1(self.config)
 
         # Conectar callbacks del robot
