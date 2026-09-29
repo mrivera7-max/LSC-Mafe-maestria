@@ -26,6 +26,13 @@ class Configuracion:
         self.modelo_pesos = "data/lsc_model.pkl"
         self.modelo_pesos_v2 = "data/lsc_model_v2.pkl"
         self.usar_v2 = False  # True = reconocedor secuencial (mano+cara), False = estatico
+        # Comparación de modelos (RF / MLP / MobileNetV2) — ver docs/comparacion_modelos.md
+        self.usar_comparativo = False      # True = selector de modelo + informes de sesión
+        self.modelo_activo = "mlp"         # rf | mlp | mobilenetv2
+        self.dir_modelos_comparacion = "data/modelos_comparacion"
+        self.dir_informes = "informes"
+        self.informe_auto = True           # informe al detener la cámara / cerrar la app
+        self.hilos_inferencia = 1          # hilos de CPU de MobileNetV2 en vivo
         # IMPORTANTE: este orden debe coincidir con el orden alfabetico
         # de las carpetas en data/signs/ (asi se entreno el modelo)
         self.clases_lsc = [

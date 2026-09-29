@@ -9,6 +9,12 @@
   "modelo_pesos": "data/lsc_model.pkl",
   "modelo_pesos_v2": "data/lsc_model_v2.pkl",
   "usar_v2": true,
+  "usar_comparativo": false,
+  "modelo_activo": "mlp",
+  "dir_modelos_comparacion": "data/modelos_comparacion",
+  "dir_informes": "informes",
+  "informe_auto": true,
+  "hilos_inferencia": 1,
   "clases_lsc": [
     "Bien",
     "Gracias",

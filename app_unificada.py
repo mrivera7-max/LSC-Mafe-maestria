@@ -19,6 +19,7 @@ Uso:
     python app_unificada.py             # ambas pestañas, con robot
     python app_unificada.py --sin-robot # sin conectar el G1
     python app_unificada.py --v2        # reconocedor v2 (recomendado)
+    python app_unificada.py --comparar  # selector RF / MLP / MobileNetV2 + informes
 """
 
 import argparse
@@ -116,6 +117,8 @@ def parsear_args():
                    help="Ejecutar sin conectar al robot G1")
     p.add_argument("--v2", action="store_true",
                    help="Usar reconocedor v2 (secuencial mano+cara, recomendado)")
+    p.add_argument("--comparar", action="store_true",
+                   help="Modo comparación: cambiar entre RF / MLP / MobileNetV2 y generar informes")
     p.add_argument("--camara", type=int, default=0, help="Índice de cámara")
     p.add_argument("--config", type=str, default="config.json")
     p.add_argument("--log-nivel", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -134,6 +137,7 @@ def main():
     config.camara_idx = args.camara
     config.robot_activo = not args.sin_robot
     config.usar_v2 = args.v2 or config.usar_v2
+    config.usar_comparativo = args.comparar or config.usar_comparativo
 
     app = AppUnificada(config)
     app.ejecutar()

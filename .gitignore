@@ -8,3 +8,8 @@ data/hand_landmarker.task
 data/face_landmarker.task 
 
 venv/
+
+# Comparación de modelos
+data/dual/
+data/modelos_comparacion/
+informes/

@@ -128,6 +128,19 @@ python main.py
 
 ---
 
+## 🧪 Comparación de modelos (RF / MLP / MobileNetV2)
+
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+python models/capturar_dual.py --sujeto S01           # landmarks + frames de la misma toma
+python -m comparacion.entrenar_comparacion --datos data/dual   # entrena los 3 + informe HTML/CSV
+python app_unificada.py --comparar                    # cambiar de modelo en vivo + informe de sesión
+```
+
+Detalles y protocolo: [docs/comparacion_modelos.md](docs/comparacion_modelos.md)
+
+---
+
 ## 🤖 Conexión al Unitree G1
 
 El robot debe estar encendido y conectado a la misma red (ethernet o WiFi directo).

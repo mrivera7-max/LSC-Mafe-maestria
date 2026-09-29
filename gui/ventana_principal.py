@@ -43,6 +43,9 @@ class VentanaPrincipal:
         self._total_señas = 0
         self._ultima_seña = None
 
+        # Modo comparación de modelos (config.usar_comparativo)
+        self._comparativo = bool(getattr(config, "usar_comparativo", False))
+
         # Componentes del sistema (inicializados al arrancar)
         self._reconocedor = None
         self._robot = None
@@ -94,6 +97,8 @@ class VentanaPrincipal:
         (La raíz la destruye AppUnificada.)"""
         self._activa = False
         self._detener_camara()
+        if self._comparativo and getattr(self.config, "informe_auto", True):
+            self._generar_informe(abrir=False)
         if self._robot:
             try:
                 self._robot.desconectar()
@@ -244,6 +249,10 @@ class VentanaPrincipal:
         c = self._colores
         pad = {"padx": 16, "pady": 8}
 
+        if self._comparativo:
+            self._construir_seccion_comparacion(pad)
+            self._separador(self._frame_info)
+
         # ── Seña detectada ────────────────────────────────────────
         sec1 = tk.Frame(self._frame_info, bg=c["panel"])
         sec1.pack(fill="x", **pad)
@@ -330,6 +339,113 @@ class VentanaPrincipal:
         self._lista_historial.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=self._lista_historial.yview)
 
+    # ── Comparación de modelos ────────────────────────────────────
+
+    def _construir_seccion_comparacion(self, pad):
+        from comparacion import MODELOS, NOMBRES_LEGIBLES
+        c = self._colores
+        sec = tk.Frame(self._frame_info, bg=c["panel"])
+        sec.pack(fill="x", **pad)
+        tk.Label(sec, text="COMPARACIÓN DE MODELOS", bg=c["panel"], fg=c["texto_sec"],
+                 font=("Segoe UI", 9, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+
+        self._mapa_modelos = {NOMBRES_LEGIBLES[m]: m for m in MODELOS}
+        tk.Label(sec, text="Modelo:", bg=c["panel"], fg=c["texto"],
+                 font=("Segoe UI", 9)).grid(row=1, column=0, sticky="w", pady=3)
+        self._var_modelo = tk.StringVar()
+        self._cb_modelo = ttk.Combobox(sec, textvariable=self._var_modelo, state="readonly",
+                                       values=list(self._mapa_modelos), width=24)
+        self._cb_modelo.grid(row=1, column=1, sticky="ew", pady=3)
+        self._cb_modelo.bind("<<ComboboxSelected>>", self._on_modelo_seleccionado)
+
+        tk.Label(sec, text="Seña esperada:", bg=c["panel"], fg=c["texto"],
+                 font=("Segoe UI", 9)).grid(row=2, column=0, sticky="w", pady=3, padx=(0, 8))
+        self._var_esperada = tk.StringVar(value="— (sin evaluar)")
+        self._cb_esperada = ttk.Combobox(sec, textvariable=self._var_esperada, state="readonly", width=24)
+        self._cb_esperada.grid(row=2, column=1, sticky="ew", pady=3)
+        self._cb_esperada.bind("<<ComboboxSelected>>", self._on_esperada_seleccionada)
+        sec.columnconfigure(1, weight=1)
+
+        tk.Button(sec, text="📊  Generar informe", bg="#0ea5e9", fg="white", relief="flat",
+                  font=("Segoe UI", 9, "bold"), padx=10, pady=4, cursor="hand2",
+                  command=lambda: self._generar_informe(abrir=True)).grid(
+            row=3, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        self._lbl_comp = tk.Label(sec, text="", bg=c["panel"], fg=c["texto_sec"],
+                                  font=("Segoe UI", 8), wraplength=340, justify="left")
+        self._lbl_comp.grid(row=4, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
+    def _poblar_comparacion(self):
+        from comparacion import NOMBRES_LEGIBLES
+        rec = self._reconocedor
+        disp = rec.modelos_disponibles()
+        self._cb_modelo.configure(values=[NOMBRES_LEGIBLES[m] + ("" if m in disp else "  (no entrenado)")
+                                          for m in self._mapa_modelos.values()])
+        self._cb_esperada.configure(values=["— (sin evaluar)"] + list(rec.clases))
+        pref = getattr(self.config, "modelo_activo", "mlp")
+        if pref in NOMBRES_LEGIBLES:
+            self._var_modelo.set(NOMBRES_LEGIBLES[pref])
+        if not disp:
+            self._lbl_comp.configure(text="No hay modelos entrenados. Ejecuta:\n"
+                                          "python -m comparacion.entrenar_comparacion", fg=self._colores["amarillo"])
+        else:
+            self._lbl_comp.configure(text=f"Entrenados: {', '.join(NOMBRES_LEGIBLES[m] for m in disp)}")
+
+    def _on_modelo_seleccionado(self, _evt=None):
+        texto = self._var_modelo.get().replace("  (no entrenado)", "")
+        nombre = self._mapa_modelos.get(texto)
+        if not nombre or nombre == self._reconocedor.modelo_activo:
+            return
+        self._lbl_comp.configure(text=f"Cargando {texto}...", fg=self._colores["texto_sec"])
+        self._cb_modelo.configure(state="disabled")
+
+        def trabajo():
+            ok, msg = self._reconocedor.cambiar_modelo(nombre)
+            self._raiz.after(0, self._fin_cambio_modelo, ok, msg, texto)
+        threading.Thread(target=trabajo, daemon=True).start()
+
+    def _fin_cambio_modelo(self, ok, msg, texto):
+        from comparacion import NOMBRES_LEGIBLES
+        self._cb_modelo.configure(state="readonly")
+        if ok:
+            self._ultima_seña = None
+            self._lbl_comp.configure(text=f"Modelo activo: {texto}", fg=self._colores["verde"])
+            self._lista_historial.insert(0, f"{time.strftime('%H:%M:%S')}  ── modelo: {texto}")
+        else:
+            actual = self._reconocedor.modelo_activo
+            self._var_modelo.set(NOMBRES_LEGIBLES.get(actual, ""))
+            self._lbl_comp.configure(text=msg, fg=self._colores["rojo"])
+
+    def _on_esperada_seleccionada(self, _evt=None):
+        v = self._var_esperada.get()
+        seña = None if v.startswith("—") else v
+        self._reconocedor.fijar_esperada(seña)
+        self._ultima_seña = None  # permitir detectar de nuevo la misma seña en el nuevo ensayo
+        self._lista_historial.insert(0, f"{time.strftime('%H:%M:%S')}  ── esperada: {seña or '—'}")
+
+    def _generar_informe(self, abrir=False):
+        if not self._comparativo or not self._reconocedor:
+            return None
+        try:
+            ruta = self._reconocedor.generar_informe()
+        except Exception as e:
+            log.exception("Error generando informe")
+            if abrir:
+                messagebox.showerror("Informe", f"No se pudo generar el informe:\n{e}")
+            return None
+        if ruta is None:
+            if abrir:
+                messagebox.showinfo("Informe", "Aún no hay datos: inicia la cámara y usa algún modelo.")
+            return None
+        log.info(f"Informe de sesión: {ruta}")
+        try:
+            self._lbl_comp.configure(text=f"Informe: {ruta.parent.name}", fg=self._colores["verde"])
+        except tk.TclError:
+            pass
+        if abrir:
+            import webbrowser
+            webbrowser.open(ruta.as_uri())
+        return ruta
+
     def _stat_card(self, parent, label, valor, fila, col):
         c = self._colores
         card = tk.Frame(parent, bg="#0d1117", padx=8, pady=6)
@@ -377,7 +493,12 @@ class VentanaPrincipal:
         """Inicializa el reconocedor y el conector al robot."""
         from robot.conector_g1 import ConectorG1
 
-        if getattr(self.config, "usar_v2", False):
+        if self._comparativo:
+            from models.reconocedor_comparativo import ReconocedorComparativo
+            self._reconocedor = ReconocedorComparativo(self.config)
+            log.info("Usando ReconocedorComparativo (RF / MLP / MobileNetV2)")
+            self._poblar_comparacion()
+        elif getattr(self.config, "usar_v2", False):
             from models.reconocedor_v2 import ReconocedorLSCv2
             self._reconocedor = ReconocedorLSCv2(self.config)
             log.info("Usando ReconocedorLSCv2 (secuencial mano+cara)")
@@ -541,6 +662,8 @@ class VentanaPrincipal:
         if self._reconocedor and self._reconocedor.activo:
             self._activa = False
             self._detener_camara()
+            if self._comparativo and getattr(self.config, "informe_auto", True):
+                self._generar_informe(abrir=True)
             self._btn_camara.configure(text="▶  Iniciar cámara", bg="#0ea5e9")
             self._lbl_status_cam.configure(text="● Cámara: inactiva", fg=c["rojo"])
             self._lbl_video.configure(image="", text="Cámara detenida", fg="#555")

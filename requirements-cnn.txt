@@ -1,0 +1,5 @@
+# Dependencias adicionales para MobileNetV2 (comparación de modelos).
+# Instalación CPU recomendada:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+torch>=2.5
+torchvision>=0.20
