@@ -1,8 +1,13 @@
-# LSC Bridge 🤝🤖
-## Reconocimiento de Lengua de Señas Colombiana para Unitree G1
+# LSC-Mafe-maestria
+## Reconocimiento de Lengua de Señas Colombiana — comparación de modelos
 
-Sistema completo para detectar señas LSC desde cámara, traducirlas al español
-y enviar los comandos de postura al robot humanoide **Unitree G1** en tiempo real.
+Versión de maestría (CDIA) derivada de [LSC-Mafe](https://github.com/mrivera7-max/LSC-Mafe):
+reconocimiento de señas LSC desde cámara y **comparación de tres clasificadores**
+(Random Forest, MLP sobre landmarks MediaPipe y MobileNetV2 por transferencia de
+aprendizaje) bajo condiciones experimentales homogéneas, con informes HTML/CSV.
+
+Esta versión **no usa el robot Unitree G1** (`usar_robot: false`). El código del
+robot se conserva y puede reactivarse con `python app_unificada.py --robot`.
 
 ---
 
