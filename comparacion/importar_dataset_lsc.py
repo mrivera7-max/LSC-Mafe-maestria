@@ -2,6 +2,14 @@
 Importa la carpeta `dataset_lsc` del software de captura de estudiantes
 (LSC_Captura_Dataset_GUI) al formato dual que usan RF, MLP y MobileNetV2.
 
+Acepta dos variantes del software:
+
+  * DUAL (LSC-Captura-Dataset v3): por cada secuencia NNN hay
+        <base>_NNN.npy (342) + <base>_NNN_frames.npy + carpeta <base>_NNN/ con los jpg.
+    Se copian tal cual: npy e imágenes ya salen de la misma toma.
+  * FOTOS (versión foto a foto): se recalculan los landmarks sobre cada foto.
+  Sesiones con solo .npy (sin imágenes) se omiten: no sirven para MobileNetV2.
+
 Estructura de origen (según el instructivo UDI-2026):
 
     dataset_lsc/
@@ -68,8 +76,30 @@ def parsear_nombre(nombre: str):
             "sena_archivo": "_".join(t[:-7])}
 
 
+def _items_sesion(d_ses: Path):
+    """('dual', [(npy, npy_frames|None, carpeta)]) | ('fotos', [jpg]) | ('solo_npy', [npy]) | (None, [])"""
+    duales, solo_npy = [], []
+    for f in sorted(d_ses.glob("*.npy")):
+        if f.stem.endswith("_frames"):
+            continue
+        carpeta = d_ses / f.stem
+        if carpeta.is_dir() and any(p.suffix.lower() in EXT for p in carpeta.iterdir()):
+            fr = d_ses / f"{f.stem}_frames.npy"
+            duales.append((f, fr if fr.exists() else None, carpeta))
+        else:
+            solo_npy.append(f)
+    if duales:
+        return "dual", duales
+    fotos = sorted(p for p in d_ses.iterdir() if p.is_file() and p.suffix.lower() in EXT)
+    if fotos:
+        return "fotos", fotos
+    if solo_npy:
+        return "solo_npy", solo_npy
+    return None, []
+
+
 def descubrir(origen: Path, senas_filtro):
-    """[(clase, sujeto, sesion, [rutas])] — una entrada por sesión."""
+    """[(clase, sujeto, sesion, modo, items, carpeta_sesion)] — una entrada por sesión."""
     sesiones = []
     for d_sena in sorted(p for p in origen.iterdir() if p.is_dir()):
         nombre = d_sena.name.lower()
@@ -86,10 +116,48 @@ def descubrir(origen: Path, senas_filtro):
                 ms = PATRON_SESION.match(d_ses.name)
                 if not ms:
                     continue
-                rutas = sorted(p for p in d_ses.iterdir() if p.suffix.lower() in EXT)
-                if rutas:
-                    sesiones.append((clase, sujeto, f"s{int(ms.group(1)):02d}", rutas))
+                modo, items = _items_sesion(d_ses)
+                if modo:
+                    sesiones.append((clase, sujeto, f"s{int(ms.group(1)):02d}", modo, items, d_ses))
     return sesiones
+
+
+def importar_sesion_dual(clase, sujeto, sesion, items, salida: Path):
+    """Copia las secuencias duales (npy + jpg de la misma toma) al formato data/dual."""
+    import shutil
+    d_clase = salida / clase
+    d_clase.mkdir(parents=True, exist_ok=True)
+    existentes = [int(p.name.split("_")[-1]) for p in d_clase.glob(f"{sujeto}_*") if p.is_dir()]
+    sig = max(existentes) + 1 if existentes else 0
+    grupo = f"{sujeto}-{sesion}"
+    ok, caras = 0, []
+    for npy, npy_frames, carpeta in items:
+        jpgs = sorted(p for p in carpeta.iterdir() if p.suffix.lower() in EXT)
+        if not jpgs:
+            continue
+        destino = d_clase / f"{sujeto}_{sig:04d}"
+        sig += 1
+        (destino / "frames").mkdir(parents=True)
+        shutil.copy2(npy, destino / "landmarks.npy")
+        cara = None
+        if npy_frames is not None:
+            shutil.copy2(npy_frames, destino / "landmarks_frames.npy")
+            try:
+                cara = float(np.load(npy_frames)[:, -1].mean())   # última columna = rostro presente
+                caras.append(cara)
+            except Exception:
+                pass
+        for i, j in enumerate(jpgs):
+            shutil.copy2(j, destino / "frames" / f"{i:03d}{j.suffix.lower()}")
+        meta = {"clase": clase, "sujeto": sujeto, "grupo": grupo, "n_frames": len(jpgs),
+                "origen": str(npy), "cara_presente_frac": cara,
+                "condiciones": {k: v for k, v in parsear_nombre(npy.stem).items()
+                                if k in ("mano", "iluminacion", "fondo", "sesion")},
+                "fuente": "LSC-Captura-Dataset dual (secuencias)",
+                "fecha_importacion": datetime.now().isoformat(timespec="seconds")}
+        (destino / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+        ok += 1
+    return ok, caras
 
 
 def main():
@@ -115,12 +183,21 @@ def main():
 
     # Resumen
     tabla = defaultdict(lambda: [0, 0])
-    for clase, sujeto, _, rutas in sesiones:
+    omitidas = [x for x in sesiones if x[3] == "solo_npy"]
+    sesiones = [x for x in sesiones if x[3] != "solo_npy"]
+    if omitidas:
+        print(f"[AVISO] {len(omitidas)} sesiones solo tienen .npy (sin imágenes) y se omiten, p. ej.: {omitidas[0][5]}")
+    if not sesiones:
+        sys.exit("No hay sesiones con imágenes. Captura con la versión dual del software.")
+    for clase, sujeto, _, modo, items, _ in sesiones:
         tabla[(clase, sujeto)][0] += 1
-        tabla[(clase, sujeto)][1] += len(rutas)
-    sujetos = sorted({s for _, s, _, _ in sesiones})
-    clases = sorted({c for c, _, _, _ in sesiones})
-    print(f"\n{len(sesiones)} sesiones · {len(sujetos)} participantes · {len(clases)} señas\n")
+        tabla[(clase, sujeto)][1] += len(items)
+    sujetos = sorted({x[1] for x in sesiones})
+    clases = sorted({x[0] for x in sesiones})
+    modos = Counter(x[3] for x in sesiones)
+    print(f"\n{len(sesiones)} sesiones ({modos.get('dual', 0)} duales, {modos.get('fotos', 0)} de fotos) · "
+          f"{len(sujetos)} participantes · {len(clases)} señas")
+    print("Muestras (secuencias o fotos) por participante y seña:\n")
     print("participante  " + "  ".join(f"{c:>8s}" for c in clases))
     for s in sujetos:
         print(f"{s:12s}  " + "  ".join(f"{tabla[(c, s)][1]:8d}" for c in clases))
@@ -134,15 +211,26 @@ def main():
     if a.simular:
         return
 
-    extractor = ExtractorSecuencial()
-    if not extractor.iniciar():
-        sys.exit("No se pudo iniciar MediaPipe (revisa data/hand_landmarker.task)")
-    logging.getLogger("lsc_bridge.features_v2").setLevel(logging.ERROR)
-
     ok, sin_mano = 0, Counter()
     cara = []
     t0_total = time.time()
-    for n_ses, (clase, sujeto, sesion, rutas) in enumerate(sesiones, 1):
+
+    # 1) Sesiones duales: copia directa, sin MediaPipe
+    for clase, sujeto, sesion, modo, items, _ in [x for x in sesiones if x[3] == "dual"]:
+        n, caras = importar_sesion_dual(clase, sujeto, sesion, items, salida)
+        ok += n
+        cara.extend(c > 0.5 for c in caras)
+        print(f"  [dual] {clase:9s} {sujeto}-{sesion}: {n} secuencias")
+
+    # 2) Sesiones de fotos: MediaPipe sobre cada foto
+    sesiones_fotos = [x for x in sesiones if x[3] == "fotos"]
+    extractor = None
+    if sesiones_fotos:
+        extractor = ExtractorSecuencial()
+        if not extractor.iniciar():
+            sys.exit("No se pudo iniciar MediaPipe (revisa data/hand_landmarker.task)")
+        logging.getLogger("lsc_bridge.features_v2").setLevel(logging.ERROR)
+    for n_ses, (clase, sujeto, sesion, _, rutas, _) in enumerate(sesiones_fotos, 1):
         if a.max_por_sesion and len(rutas) > a.max_por_sesion:
             idx = np.round(np.linspace(0, len(rutas) - 1, a.max_por_sesion)).astype(int)
             rutas = [rutas[i] for i in idx]
@@ -186,20 +274,25 @@ def main():
                     "fecha_importacion": datetime.now().isoformat(timespec="seconds")}
             (destino / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
             ok += 1
-        print(f"  [{n_ses}/{len(sesiones)}] {clase:9s} {grupo}: "
+        print(f"  [fotos {n_ses}/{len(sesiones_fotos)}] {clase:9s} {grupo}: "
               f"{len(rutas) - sin_mano[grupo]}/{len(rutas)} con mano")
-    extractor.detener()
+    if extractor:
+        extractor.detener()
 
-    print(f"\nImportadas {ok} imágenes en {time.time() - t0_total:.0f} s → {salida}")
+    print(f"\nImportadas {ok} muestras en {time.time() - t0_total:.0f} s → {salida}")
     if sin_mano:
         print(f"Descartadas sin mano detectada: {sum(sin_mano.values())}")
     if cara:
         fr = 100 * np.mean(cara)
-        print(f"Rostro detectado en el {fr:.0f}% de las imágenes.")
+        print(f"Rostro visible (mayoría de frames) en el {fr:.0f}% de las muestras.")
         if fr < 50:
             print("[AVISO] La mayoría de imágenes no tiene rostro: la distancia mano-boca (clave para "
                   "Silencio y Gracias) queda sin información, y en la app en vivo el rostro SÍ aparece.")
-    print("\nSiguiente: python -m comparacion.entrenar_comparacion --datos data/dual --validacion sesion")
+    if modos.get("fotos"):
+        print("\nSiguiente: python -m comparacion.entrenar_comparacion --datos data/dual --validacion sesion")
+    else:
+        print("\nSiguiente: python -m comparacion.entrenar_comparacion --datos data/dual           (K-fold)")
+        print("           python -m comparacion.entrenar_comparacion --datos data/dual --validacion loso")
 
 
 if __name__ == "__main__":

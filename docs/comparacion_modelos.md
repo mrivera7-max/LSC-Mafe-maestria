@@ -57,7 +57,13 @@ python -m comparacion.importar_imagenes --origen D:/lsc_imagenes --por-sujeto
 Imágenes sueltas (`origen/<seña>/*.jpg`) se aceptan como tomas de 1 frame, pero no capturan movimiento.
 Usa `--espejo` si las imágenes no vienen volteadas como la cámara de la app.
 
-### 2c. Importar `dataset_lsc` (software de captura de estudiantes, foto a foto)
+### 2c. Importar `dataset_lsc` (software de captura de estudiantes)
+
+**Versión dual (recomendada, LSC-Captura-Dataset con secuencias + imágenes):** cada secuencia trae su
+.npy y sus .jpg de la misma toma; el importador los copia tal cual (sin recalcular) y se puede usar
+`kfold`, `sesion` o `loso`.
+
+**Versión foto a foto (antigua):**
 
 ```bash
 python -m comparacion.importar_dataset_lsc --origen C:/ruta/dataset_lsc --simular   # tabla participante × seña
