@@ -52,8 +52,9 @@ def parsear_args():
     p = argparse.ArgumentParser(description="Comparación RF / MLP / MobileNetV2 (LSC)")
     p.add_argument("--datos", default="data/dual")
     p.add_argument("--modelos", nargs="+", choices=MODELOS, default=list(MODELOS))
-    p.add_argument("--validacion", choices=["kfold", "loso"], default="kfold",
-                   help="kfold estratificado o leave-one-subject-out")
+    p.add_argument("--validacion", choices=["kfold", "sesion", "loso"], default="kfold",
+                   help="kfold: estratificado por muestra | sesion: K-fold agrupado por sesión de captura "
+                        "(evita casi-duplicados en train y test) | loso: leave-one-subject-out")
     p.add_argument("--folds", type=int, default=5)
     p.add_argument("--semilla", type=int, default=42)
     p.add_argument("--hilos", type=int, default=4, help="Hilos de CPU para TODOS los modelos")
@@ -80,6 +81,15 @@ def fijar_semillas(s):
 def generar_particiones(ds, y, esquema, folds, semilla):
     from sklearn.model_selection import LeaveOneGroupOut, StratifiedKFold
     idx = np.arange(len(y))
+    if esquema == "sesion":
+        from sklearn.model_selection import StratifiedGroupKFold
+        g = ds.grupos_sesion
+        k = min(folds, len(set(g)))
+        if k < 2:
+            raise SystemExit("La validación por sesión necesita al menos 2 sesiones.")
+        sgk = StratifiedGroupKFold(n_splits=k, shuffle=True, random_state=semilla)
+        parts = list(sgk.split(idx, y, g))
+        return parts, [f"fold {i+1} ({len(set(g[te]))} ses.)" for i, (_, te) in enumerate(parts)]
     if esquema == "loso":
         grupos = ds.grupos
         if len(set(grupos)) < 2:
@@ -368,6 +378,24 @@ def generar_informe_entrenamiento(dir_inf, ds, y, modelos, res, particiones, nom
                             [[inf.nombre_modelo(a), inf.nombre_modelo(b), nb, nc, f"{p:.4f}", f"{ph:.4f}",
                               "sí" if ph < 0.05 else "no"] for a, b, nb, nc, p, ph in pares]))
 
+    # Accuracy por condición de captura (si el dataset la registra: mano, iluminación, fondo)
+    filas_cond, csv_cond = [], []
+    for clave, titulo in (("iluminacion", "Iluminación"), ("fondo", "Fondo"), ("mano", "Mano")):
+        valores = ds.condicion(clave)
+        niveles = [v for v in sorted(set(valores.tolist())) if v]
+        if len(niveles) < 2:
+            continue
+        for v in niveles:
+            msk = valores == v
+            accs = [float(np.mean(res[n]["oof"][msk] == y[msk])) for n in modelos]
+            filas_cond.append([titulo, inf.esc(v), int(msk.sum())] + [f"{a*100:.2f}" for a in accs])
+            csv_cond.append([clave, v, int(msk.sum())] + accs)
+    if filas_cond:
+        cuerpo.append("<h2>Accuracy por condición de captura (fuera de fold)</h2>")
+        cuerpo.append(inf.tabla(["Condición", "Nivel", "n"] + [inf.nombre_modelo(n) for n in modelos], filas_cond))
+        cuerpo.append('<p class="nota">Muestra qué modelo es más robusto a la iluminación, el fondo y la mano usada.</p>')
+        inf.escribir_csv(dir_inf / "accuracy_por_condicion.csv", ["condicion", "nivel", "n"] + modelos, csv_cond)
+
     cuerpo.append("<h2>F1 por clase</h2>")
     cuerpo.append(inf.tabla(["Modelo"] + [inf.esc(c) for c in clases],
                             [[inf.nombre_modelo(n)] + [f"{v:.3f}" for v in res[n]["f1_clase"]] for n in modelos]))
@@ -389,6 +417,7 @@ def generar_informe_entrenamiento(dir_inf, ds, y, modelos, res, particiones, nom
         ["Dataset", inf.esc(f"{rs['directorio']} ({rs['formato']})")],
         ["Muestras por clase", inf.esc(", ".join(f"{k}: {v}" for k, v in rs["por_clase"].items()))],
         ["Sujetos", inf.esc(", ".join(rs["sujetos"]))],
+        ["Sesiones de captura", rs.get("n_grupos_sesion", "—")],
         ["Esquema de validación", inf.esc(f"{args.validacion} — {len(particiones)} particiones, idénticas para los 3 modelos")],
         ["Semilla", args.semilla],
         ["Hilos de CPU (todos los modelos)", args.hilos],

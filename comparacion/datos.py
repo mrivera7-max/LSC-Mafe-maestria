@@ -51,7 +51,18 @@ class Dataset:
 
     @property
     def grupos(self) -> np.ndarray:
+        """Sujeto de cada muestra (para LOSO)."""
         return np.array([m.sujeto for m in self.muestras])
+
+    @property
+    def grupos_sesion(self) -> np.ndarray:
+        """Sesión de captura de cada muestra (fotos casi duplicadas comparten grupo).
+        Si no hay sesión registrada, cada toma es su propio grupo."""
+        return np.array([m.meta.get("grupo") or str(m.ruta_landmarks.parent) for m in self.muestras])
+
+    def condicion(self, clave: str) -> np.ndarray:
+        """Valor de una condición de captura (mano, iluminacion, fondo) o '' si no existe."""
+        return np.array([m.meta.get("condiciones", {}).get(clave, "") for m in self.muestras])
 
     def X_landmarks(self) -> np.ndarray:
         return np.stack([np.load(m.ruta_landmarks) for m in self.muestras])
@@ -71,6 +82,7 @@ class Dataset:
             "n_clases": len(self.clases),
             "por_clase": por_clase,
             "sujetos": sorted(set(self.grupos.tolist())),
+            "n_grupos_sesion": len(set(self.grupos_sesion.tolist())),
         }
 
 

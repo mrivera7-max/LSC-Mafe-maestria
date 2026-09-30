@@ -40,10 +40,44 @@ python models/capturar_dual.py --sujeto S02 --muestras 60
 - Solo se guardan frames con mano detectada (igual que la ventana del reconocedor en vivo). Tomas con < 8 frames con mano se descartan.
 - Estructura: `data/dual/<seña>/<sujeto>_<idx>/{landmarks.npy, landmarks_frames.npy, frames/*.jpg, meta.json}` (~20–40 MB por sujeto y seña; no va al repositorio).
 
+### 2b. Importar una base de imágenes ya existente
+
+Si las imágenes se capturaron con otra herramienta, `importar_imagenes.py` las convierte al formato dual
+y **recalcula los landmarks con MediaPipe sobre esas mismas imágenes** (no uses .npy capturados aparte:
+no estarían emparejados con las imágenes).
+
+```bash
+# origen/<seña>/<toma>/*.jpg   (una carpeta por toma — recomendado)
+python -m comparacion.importar_imagenes --origen D:/lsc_imagenes --sujeto S01 --simular   # revisar
+python -m comparacion.importar_imagenes --origen D:/lsc_imagenes --sujeto S01
+# origen/<sujeto>/<seña>/<toma>/*.jpg
+python -m comparacion.importar_imagenes --origen D:/lsc_imagenes --por-sujeto
+```
+
+Imágenes sueltas (`origen/<seña>/*.jpg`) se aceptan como tomas de 1 frame, pero no capturan movimiento.
+Usa `--espejo` si las imágenes no vienen volteadas como la cámara de la app.
+
+### 2c. Importar `dataset_lsc` (software de captura de estudiantes, foto a foto)
+
+```bash
+python -m comparacion.importar_dataset_lsc --origen C:/ruta/dataset_lsc --simular   # tabla participante × seña
+python -m comparacion.importar_dataset_lsc --origen C:/ruta/dataset_lsc
+python -m comparacion.entrenar_comparacion --datos data/dual --validacion sesion    # o --validacion loso
+```
+
+- Cada foto es una muestra; los landmarks se recalculan sobre la misma foto (muestras emparejadas).
+- Sujeto = estudiante + participante (`E01P001`); grupo = sujeto + sesión.
+- **No usar `--validacion kfold` con este dataset**: las 100 fotos de una sesión son casi duplicadas y
+  quedarían repartidas entre entrenamiento y prueba (accuracy inflada). Usar `sesion` o `loso`.
+- mano / iluminación / fondo se leen del nombre del archivo → el informe incluye accuracy por condición.
+- Limitaciones: sin movimiento (Sí/No) y, si el protocolo excluye el rostro, sin distancia mano-boca
+  (Silencio/Gracias); la app en vivo sí ve el rostro y usa ventanas de 20 frames.
+
 ## 3. Entrenar y evaluar los tres modelos
 
 ```bash
 python -m comparacion.entrenar_comparacion --datos data/dual                   # K-fold estratificado (5)
+python -m comparacion.entrenar_comparacion --datos data/dual --validacion sesion # K-fold agrupado por sesión
 python -m comparacion.entrenar_comparacion --datos data/dual --validacion loso # inter-sujeto (≥ 2 sujetos)
 python -m comparacion.entrenar_comparacion --datos data/sequences --modelos rf mlp  # dataset viejo, sin CNN
 ```
