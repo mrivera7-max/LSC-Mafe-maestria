@@ -136,13 +136,20 @@ python main.py
 ## 🧪 Comparación de modelos (RF / MLP / MobileNetV2)
 
 ```bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements-cnn.txt --index-url https://download.pytorch.org/whl/cpu
 python models/capturar_dual.py --sujeto S01           # landmarks + frames de la misma toma
-python -m comparacion.entrenar_comparacion --datos data/dual   # entrena los 3 + informe HTML/CSV
+python -m comparacion.entrenar_comparacion --datos data/dual --version-dataset v1   # 3 modelos + informe + bitácora
 python app_unificada.py --comparar                    # cambiar de modelo en vivo + informe de sesión
 ```
 
 Detalles y protocolo: [docs/comparacion_modelos.md](docs/comparacion_modelos.md)
+
+### Reproducibilidad
+
+- **Entorno:** Python 3.13 (`.python-version`); versiones fijas en `requirements.txt` y `requirements-cnn.txt` (torch 2.14.1, torchvision 0.29.2). MediaPipe 1.0.1 es la misma versión del capturador [LSC-Captura-Dataset](https://github.com/mrivera7-max/LSC-Captura-Dataset).
+- **Datos:** cada versión del dataset se congela con `manifiesto_dataset.py` (capturador), que genera la huella SHA-256.
+- **Experimentos:** cada entrenamiento registra commit de Git, huella del dataset, semilla, hiperparámetros y métricas en `experimentos/bitacora.csv` y en `informes/<corrida>/entorno.json`. Ver [experimentos/README.md](experimentos/README.md).
+- **Código:** las corridas oficiales se hacen sin cambios pendientes de commit; las versiones de referencia llevan etiqueta (`maestria-v1.0`).
 
 ---
 

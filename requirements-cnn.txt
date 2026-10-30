@@ -1,5 +1,6 @@
 # Dependencias adicionales para MobileNetV2 (comparación de modelos).
+# Versiones FIJAS para reproducibilidad (Python 3.13, CPU).
 # Instalación CPU recomendada:
-#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-torch>=2.5
-torchvision>=0.20
+#   pip install -r requirements-cnn.txt --index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1
+torchvision==0.29.2

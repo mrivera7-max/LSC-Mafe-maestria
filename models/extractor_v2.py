@@ -6,8 +6,10 @@ Combina:
   - FaceLandmarker (puntos clave de boca/labios, 8 puntos x 3 coords = 24)
   - Secuencia temporal de N frames (resume con estadísticos: inicio, fin, máx movimiento)
 
-Vector de features por frame: 126 (manos) + 24 (boca) + 3 (distancia mano-boca) = 153
-Vector de features por secuencia (agregado): 153 * 3 (mean, std, delta inicio-fin) = 459
+Vector de features por frame (capturador): 126 (manos) + 24 (boca) + 1 (distancia
+índice derecho-boca) + 1 (rostro presente) = 152
+Vector de features por secuencia (agregar_secuencia): mean(der, izq, boca) 150 +
+std(der, izq) 126 + delta(der) 63 + dist(mean, min, std) 3 = 342
 
 Esto permite diferenciar:
   - Señas estáticas (Hola, Gracias, Bien, Mal) — el agregado captura la postura fija.
@@ -240,7 +242,7 @@ class ExtractorSecuencial:
           - mean(dist_mano_boca), min(dist_mano_boca)      -> cercanía a la boca
         """
         if not frames:
-            return np.zeros(459)
+            return np.zeros(342)
 
         manos_der = np.array([f.mano_der for f in frames])   # (N, 63)
         manos_izq = np.array([f.mano_izq for f in frames])   # (N, 63)

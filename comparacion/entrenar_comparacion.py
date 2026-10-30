@@ -21,7 +21,13 @@ Uso:
 
 Salidas:
     data/modelos_comparacion/<modelo>/   modelo final (todas las muestras) + meta.json
-    informes/entrenamiento_<fecha>/      informe.html + CSV + entorno.json
+    informes/entrenamiento_<fecha>/      informe.html + CSV + entorno.json (+ trazabilidad)
+    experimentos/bitacora.csv            una fila por modelo y corrida (versionar en Git)
+
+Trazabilidad:
+    python -m comparacion.entrenar_comparacion --datos data/dual --validacion loso \
+        --version-dataset v1 --nota "primera corrida LOSO con 3 sujetos"
+    Registra commit de Git, huella SHA-256 del dataset, parámetros y métricas.
 """
 
 import argparse
@@ -41,6 +47,7 @@ from comparacion import MODELOS, NOMBRES_LEGIBLES  # noqa: E402
 from comparacion import informe as inf  # noqa: E402
 from comparacion.datos import RAIZ, cargar_dataset  # noqa: E402
 from comparacion.entorno import describir_entorno  # noqa: E402
+from comparacion import trazabilidad as traz  # noqa: E402
 from comparacion.modelos import (HIPER, BackboneMobileNetV2, crear_modelo,  # noqa: E402
                                  guardar_meta, muestrear_indices, tamano_en_disco_mb,
                                  torch_disponible)
@@ -63,6 +70,11 @@ def parsear_args():
     p.add_argument("--salida-informes", default="informes")
     p.add_argument("--no-guardar-modelos", action="store_true",
                    help="Solo evaluar; no sobrescribir los modelos usados por la app")
+    p.add_argument("--version-dataset", default="",
+                   help="Versión del dataset según su manifiesto (p. ej. v1); se registra en la bitácora")
+    p.add_argument("--nota", default="", help="Comentario libre que queda en la bitácora")
+    p.add_argument("--bitacora", default="experimentos/bitacora.csv")
+    p.add_argument("--sin-bitacora", action="store_true", help="No agregar la corrida a la bitácora")
     p.add_argument("--sin-pesos-imagenet", action="store_true",
                    help="SOLO PARA PRUEBAS: MobileNetV2 con pesos aleatorios")
     return p.parse_args()
@@ -161,6 +173,15 @@ def main():
              f"sujetos={sorted(set(ds.grupos.tolist()))}")
 
     avisos = []
+    git = traz.estado_git(RAIZ)
+    if git.get("sin_commit"):
+        avisos.append("El código tiene cambios sin commit: este resultado no se puede reproducir desde Git. "
+                      "Haga commit antes de una corrida oficial.")
+    elif git["commit"] == "no disponible":
+        avisos.append("No se pudo leer el commit de Git: la corrida queda sin referencia al código.")
+    log.info("Calculando huella del dataset…")
+    huella = traz.huella_dataset(ds.directorio)
+    log.info(f"Huella del dataset: {huella['huella_corta']} ({huella['archivos']} archivos)")
     modelos = list(args.modelos)
     entradas = {}
     t_embed = None
@@ -262,8 +283,32 @@ def main():
             res[nombre]["mb"] = None
 
     dir_inf = RAIZ / args.salida_informes / f"entrenamiento_{fecha:%Y%m%d_%H%M%S}"
+    trazas = {"git": git, "dataset": {**huella, "version": args.version_dataset,
+                                       "directorio": str(ds.directorio)},
+              "comando": " ".join(sys.argv), "nota": args.nota}
     generar_informe_entrenamiento(dir_inf, ds, y, modelos, res, particiones, nombres_part,
-                                  args, entorno, avisos, fecha, t_embed)
+                                  args, entorno, avisos, fecha, t_embed, trazas)
+    if not args.sin_bitacora:
+        ruta_bit = RAIZ / args.bitacora
+        traz.registrar_bitacora(ruta_bit, [{
+            "id_corrida": f"{fecha:%Y%m%d_%H%M%S}", "fecha": fecha.isoformat(timespec="seconds"),
+            "commit": git["commit"][:12], "codigo_sin_commit": git.get("sin_commit"),
+            "version_codigo": git.get("version", ""),
+            "dataset": args.datos, "version_dataset": args.version_dataset,
+            "huella_dataset": huella["huella_corta"], "n_muestras": len(y), "n_clases": len(ds.clases),
+            "n_sujetos": len(set(ds.grupos.tolist())), "validacion": args.validacion,
+            "particiones": len(particiones), "semilla": args.semilla, "hilos": args.hilos,
+            "k_frames": args.k_frames if n == "mobilenetv2" else "",
+            "modelo": n, "hiperparametros": HIPER[n],
+            "accuracy_media": round(res[n]["accuracy"][0], 4), "accuracy_std": round(res[n]["accuracy"][1], 4),
+            "f1_macro_media": round(res[n]["f1_macro"][0], 4), "f1_macro_std": round(res[n]["f1_macro"][1], 4),
+            "precision_macro_media": round(res[n]["precision_macro"][0], 4),
+            "recall_macro_media": round(res[n]["recall_macro"][0], 4),
+            "latencia_mediana_ms": round(float(np.median(res[n]["lat"])), 3),
+            "informe": dir_inf.relative_to(RAIZ).as_posix() if dir_inf.is_relative_to(RAIZ) else str(dir_inf),
+            "nota": args.nota,
+        } for n in modelos])
+        print(f"Bitácora actualizada: {ruta_bit}")
     log.info(f"Informe: {dir_inf / 'informe.html'}")
     print(f"\nInforme generado: {dir_inf / 'informe.html'}")
 
@@ -273,7 +318,7 @@ def _pct(mu_sd):
 
 
 def generar_informe_entrenamiento(dir_inf, ds, y, modelos, res, particiones, nombres_part,
-                                  args, entorno, avisos, fecha, t_embed):
+                                  args, entorno, avisos, fecha, t_embed, trazas=None):
     dir_inf.mkdir(parents=True, exist_ok=True)
     clases = ds.clases
 
@@ -321,7 +366,8 @@ def generar_informe_entrenamiento(dir_inf, ds, y, modelos, res, particiones, nom
     (dir_inf / "entorno.json").write_text(json.dumps({
         "entorno": entorno, "dataset": ds.resumen(), "hiperparametros": {n: HIPER[n] for n in modelos},
         "validacion": args.validacion, "particiones": nombres_part, "semilla": args.semilla,
-        "hilos": args.hilos, "k_frames": args.k_frames}, indent=2, ensure_ascii=False), encoding="utf-8")
+        "hilos": args.hilos, "k_frames": args.k_frames, "trazabilidad": trazas or {}},
+        indent=2, ensure_ascii=False), encoding="utf-8")
 
     # ── HTML ─────────────────────────────────────────────────────
     cuerpo = []
@@ -423,6 +469,20 @@ def generar_informe_entrenamiento(dir_inf, ds, y, modelos, res, particiones, nom
         ["Hilos de CPU (todos los modelos)", args.hilos],
         ["Frames por toma (MobileNetV2)", args.k_frames],
     ]))
+    if trazas:
+        g, d = trazas["git"], trazas["dataset"]
+        estado = ("con cambios sin commit (no reproducible)" if g.get("sin_commit")
+                  else "limpio" if g.get("sin_commit") is False else "desconocido")
+        cuerpo.append("<h3>Trazabilidad</h3>")
+        cuerpo.append(inf.tabla(["Elemento", "Valor"], [
+            ["Commit del código", inf.esc(f"{g['commit']} ({g.get('rama', '')})")],
+            ["Versión del código", inf.esc(g.get("version") or "—")],
+            ["Estado del código", inf.esc(estado)],
+            ["Versión del dataset", inf.esc(d.get("version") or "sin declarar (--version-dataset)")],
+            ["Huella SHA-256 del dataset", inf.esc(f"{d['huella_sha256']} ({d['archivos']} archivos)")],
+            ["Comando", inf.esc(trazas.get("comando", ""))],
+            ["Nota", inf.esc(trazas.get("nota") or "—")],
+        ]))
     mp_ms = [m.meta.get("t_mediapipe_ms_medio") for m in ds.muestras if m.meta.get("t_mediapipe_ms_medio")]
     if mp_ms:
         cuerpo.append(f'<p class="nota">Costo medio de MediaPipe por frame medido durante la captura: '

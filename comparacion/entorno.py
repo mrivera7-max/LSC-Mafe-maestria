@@ -71,6 +71,6 @@ def describir_entorno(hilos=None) -> dict:
         "hilos_limitados_a": hilos,
         "python": sys.version.split()[0],
         "paquetes": {p: _version(p) for p in (
-            "numpy", "scikit-learn", "mediapipe", "opencv-python",
+            "numpy", "scikit-learn", "mediapipe", "opencv-python", "opencv-contrib-python",
             "torch", "torchvision", "threadpoolctl")},
     }
